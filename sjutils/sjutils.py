@@ -887,7 +887,7 @@ def uniform_sphere(RAlim, DEClim, size=1):
     
     return RA, DEC
 
-def uniform_random_on_sphere(data, size = None, z=False ):
+def uniform_random_on_sphere(data, size = None, z=False, ratag='RA', dectag='DEC', ztag='Z' ):
     """Create random samples on the region of a given data
     Parameters
     ----------
@@ -898,8 +898,8 @@ def uniform_random_on_sphere(data, size = None, z=False ):
     data_R : created randoms
     """
     
-    ra = data['RA']
-    dec = data['DEC']
+    ra = data[ratag]
+    dec = data[dectag]
     
     n_features = ra.size
     #size = 100 * data.size
@@ -915,17 +915,17 @@ def uniform_random_on_sphere(data, size = None, z=False ):
     
 
 
-    data_R = np.zeros((ra_R.size,), dtype=[('RA', 'float'), ('DEC', 'float'), ('DESDM_ZP', 'float'), ('HPIX', 'int')])
-    data_R['RA'] = ra_R
-    data_R['DEC'] = dec_R
+    data_R = np.zeros((ra_R.size,), dtype=[(ratag, 'float'), (dectag, 'float'), (ztag, 'float'), ('HPIX', 'int')])
+    data_R[ratag] = ra_R
+    data_R[dectag] = dec_R
     hpind = hpRaDecToHEALPixel(ra_R, dec_R, nside= 4096, nest= True) 
     data_R['HPIX_NEST'] = hpind
     
     #random redshift distribution
     if z ==True:
-        mu, sigma = np.mean(data['DESDM_ZP']), np.std(data['DESDM_ZP'])
+        mu, sigma = np.mean(data[ztag]), np.std(data[ztag])
         z_R = np.random.normal(mu, sigma, size)
-        data_R['DESDM_ZP'] = z_R
+        data_R[ztag] = z_R
                               
     return data_R
 
