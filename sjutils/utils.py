@@ -3,7 +3,7 @@ from __future__ import print_function, division, absolute_import, unicode_litera
 import numpy as np
 import numpy.lib.recfunctions as rf
 import healpy as hp
-import esutil
+import esutil, fitsio
 #import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -111,12 +111,24 @@ def hpRaDecToRotatedHEALPixel(ra, dec, nside = 8, nest = False):
     pix  = hp.vec2pix(nside, *rvec, nest=nest)
     return pix
 
+def convert_DESfits_to_hpmap( filename=None, nside=4096, hpixtag='HPIX', valuetag='VALUE', r2n=False):
+    """
+    convert fits file of DES mask or weight maps to a full healpix map
+    """
+    maps = fitsio.read(filename)
+    array = np.zeros(hp.nside2npix(nside))
+    array[maps[hpixtag]] = maps[valuetag]
+    if r2n: array = hp.reorder(array, r2n=r2n)
+    return array
 
-def rotate_hp_map(hmap, coord = ['C', 'G']):
+
+def _rotate_hp_map(hmap, coord = ['C', 'G']):
     """
     Take hmap (a healpix map array) and return another healpix map array 
     which is ordered such that it has been rotated in (theta, phi) by the 
     amounts given.
+
+    This is very slow... Use the other one with the same name below
     """
     nside = hp.npix2nside(len(hmap))
 
@@ -134,6 +146,39 @@ def rotate_hp_map(hmap, coord = ['C', 'G']):
 
     return rot_map
 
+
+def rotate_hp_map(m, coord):
+    print (f'changing coordiante from {coord[0]} to {coord[1]}')
+    """ Change coordinates of a HEALPIX map
+
+    Parameters
+    ----------
+    m : map or array of maps
+      map(s) to be rotated
+    coord : sequence of two character
+      First character is the coordinate system of m, second character
+      is the coordinate system of the output map. As in HEALPIX, allowed
+      coordinate systems are 'G' (galactic), 'E' (ecliptic) or 'C' (equatorial)
+
+    Example
+    -------
+    The following rotate m from galactic to equatorial coordinates.
+    Notice that m can contain both temperature and polarization.
+    >>>> change_coord(m, ['G', 'C'])
+    """
+    # Basic HEALPix parameters
+    npix = m.shape[-1]
+    nside = hp.npix2nside(npix)
+    ang = hp.pix2ang(nside, np.arange(npix))
+
+    # Select the coordinate transformation
+    rot = hp.Rotator(coord=reversed(coord))
+
+    # Convert the coordinates
+    new_ang = rot(*ang)
+    new_pix = hp.ang2pix(nside, *new_ang)
+
+    return m[..., new_pix]
 
 
 def MatchHPArea(cat=None, sysMap=None, origin_cat=None, nside=512):
@@ -887,7 +932,7 @@ def uniform_sphere(RAlim, DEClim, size=1):
     
     return RA, DEC
 
-def uniform_random_on_sphere(data, size = None, z=False, ratag='RA', dectag='DEC', ztag='Z' ):
+def uniform_random_on_sphere(data, size = None, z=False, ratag='RA', dectag='DEC', ztag='Z', znormal=True ):
     """Create random samples on the region of a given data
     Parameters
     ----------
@@ -911,23 +956,44 @@ def uniform_random_on_sphere(data, size = None, z=False, ratag='RA', dectag='DEC
     #data = np.asarray(ra_dec_to_xyz(ra, dec), order='F').T
     #data_R = np.asarray(ra_dec_to_xyz(ra_R, dec_R), order='F').T
     
-    
-    
-
-
     data_R = np.zeros((ra_R.size,), dtype=[(ratag, 'float'), (dectag, 'float'), (ztag, 'float'), ('HPIX', 'int')])
     data_R[ratag] = ra_R
     data_R[dectag] = dec_R
     hpind = hpRaDecToHEALPixel(ra_R, dec_R, nside= 4096, nest= True) 
-    data_R['HPIX_NEST'] = hpind
+    data_R['HPIX'] = hpind
     
     #random redshift distribution
     if z ==True:
-        mu, sigma = np.mean(data[ztag]), np.std(data[ztag])
-        z_R = np.random.normal(mu, sigma, size)
+        if znormal: 
+            # make normal distribution
+            mu, sigma = np.mean(data[ztag]), np.std(data[ztag])
+            z_R = np.random.normal(mu, sigma, size)
+        else: 
+            # uniform redshift distribution between zmin and zmax 
+            z_R = np.random.uniform( data[ztag].min(), data[ztag].max(), size)
+
         data_R[ztag] = z_R
                               
     return data_R
+
+
+def generate_uniform_random_in_mask(data, mask=None, nside=4096, nest=True, ratag='RA', dectag='DEC', **kwargs):
+    """
+    mask: binary healpix mask
+    nside: mask nside
+    nest: if mask ordering is nest, True
+    """
+
+    data_R = uniform_random_on_sphere(data, **kwargs)
+    hpind = hpRaDecToHEALPixel(data_R[ratag], data_R[dectag], nside=nside, nest=nest)
+
+    mask_hpind = np.arange( hp.nside2npix(nside) ) [mask != 0.0]
+    random_mask = np.in1d( hpind, mask_hpind )
+    return data_R[random_mask]
+    
+    
+
+
 
 ###### Creating randoms on sphere ------------------------------------------
 
